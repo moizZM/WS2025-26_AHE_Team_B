@@ -1,0 +1,2 @@
+half_adder.vhd,vhdl,xil_defaultlib,../../../../../../../../../../intelFPGA/20.1/half_adder.vhd,incdir="../../../Xilinx/2025.1.1/Vivado/data/rsb/busdef"
+full1bitadder.vhd,vhdl,xil_defaultlib,../../../../../../../../full1bitadder/full1bitadder.srcs/sources_1/new/full1bitadder.vhd,incdir="../../../Xilinx/2025.1.1/Vivado/data/rsb/busdef"
