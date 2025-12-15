@@ -1,140 +1,114 @@
-from machine import UART, Pin
-import time
-import bluetooth
+from machine import Pin, PWM
+import time, bluetooth
 from micropython import const
 
-_IRQ_SCAN_RESULT = const(5)
-_IRQ_SCAN_DONE = const(6)
-_IRQ_PERIPHERAL_CONNECT = const(7)
-_IRQ_PERIPHERAL_DISCONNECT = const(8)
-_IRQ_GATTC_SERVICE_RESULT = const(9)
-_IRQ_GATTC_SERVICE_DONE = const(10)
-_IRQ_GATTC_CHARACTERISTIC_RESULT = const(11)
-_IRQ_GATTC_CHARACTERISTIC_DONE = const(12)
+_IRQ_GATTS_WRITE = const(3)
 
 _UART_UUID = bluetooth.UUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
-_UART_RX_UUID = bluetooth.UUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
+_UART_RX = (bluetooth.UUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E"), bluetooth.FLAG_WRITE)
+_UART_TX = (bluetooth.UUID("6E400003-B5A3-F393-E0A9-E50E24DCCA9E"), bluetooth.FLAG_NOTIFY)
+_UART_SERVICE = (_UART_UUID, (_UART_TX, _UART_RX))
 
-def first_number(s):
-    if not s:
-        return None
-    s = s.replace(",", " ").replace("=", " ").replace("x", " ").replace("X", " ")
-    s = s.replace("y", " ").replace("Y", " ").replace("z", " ").replace("Z", " ")
-    t = s.split()
-    if not t:
-        return None
-    try:
-        return int(float(t[0]))
-    except:
-        return None
+def adv_payload(name):
+    n = name.encode()
+    return b"\x02\x01\x06" + bytes((len(n) + 1, 0x09)) + n
 
-class BleClient:
-    def __init__(self, target_name="car-esp32"):
+class BLE:
+    def __init__(self):
         self.ble = bluetooth.BLE()
         self.ble.active(True)
-        self.ble.irq(self._irq)
-        self.target_name = target_name
-        self.conn = None
-        self.rx_handle = None
-        self._reset()
+        self.ble.irq(self.irq)
+        ((self.tx, self.rx),) = self.ble.gatts_register_services((_UART_SERVICE,))
+        self.buf = b""
+        self.ble.gap_advertise(100, adv_payload("car-esp32"))
 
-    def _reset(self):
-        self.found = None
-        self.conn = None
-        self.rx_handle = None
-        self.svc_start = None
-        self.svc_end = None
+    def irq(self, e, d):
+        if e == _IRQ_GATTS_WRITE:
+            self.buf += self.ble.gatts_read(self.rx)
 
-    def _irq(self, event, data):
-        if event == _IRQ_SCAN_RESULT:
-            addr_type, addr, adv_type, rssi, adv_data = data
-            name = self._decode_name(adv_data)
-            if name == self.target_name:
-                self.found = (addr_type, bytes(addr))
-                self.ble.gap_scan(None)
-        elif event == _IRQ_SCAN_DONE:
-            pass
-        elif event == _IRQ_PERIPHERAL_CONNECT:
-            self.conn, _, _ = data
-            self.ble.gattc_discover_services(self.conn)
-        elif event == _IRQ_PERIPHERAL_DISCONNECT:
-            self._reset()
-        elif event == _IRQ_GATTC_SERVICE_RESULT:
-            conn, start, end, uuid = data
-            if uuid == _UART_UUID:
-                self.svc_start = start
-                self.svc_end = end
-        elif event == _IRQ_GATTC_SERVICE_DONE:
-            if self.svc_start is not None:
-                self.ble.gattc_discover_characteristics(self.conn, self.svc_start, self.svc_end)
-        elif event == _IRQ_GATTC_CHARACTERISTIC_RESULT:
-            conn, def_handle, value_handle, properties, uuid = data
-            if uuid == _UART_RX_UUID:
-                self.rx_handle = value_handle
-        elif event == _IRQ_GATTC_CHARACTERISTIC_DONE:
-            pass
-
-    def _decode_name(self, adv):
-        i = 0
-        while i + 1 < len(adv):
-            ln = adv[i]
-            if ln == 0:
-                return None
-            t = adv[i + 1]
-            if t == 0x09:
-                try:
-                    return adv[i + 2:i + 1 + ln].decode()
-                except:
-                    return None
-            i += 1 + ln
-        return None
-
-    def connect(self):
-        self._reset()
-        self.ble.gap_scan(2000, 30000, 30000)
-        t0 = time.ticks_ms()
-        while self.found is None and time.ticks_diff(time.ticks_ms(), t0) < 3000:
-            time.sleep_ms(50)
-        if self.found is None:
-            return False
-        at, a = self.found
-        self.ble.gap_connect(at, a)
-        t0 = time.ticks_ms()
-        while (self.conn is None or self.rx_handle is None) and time.ticks_diff(time.ticks_ms(), t0) < 5000:
-            time.sleep_ms(50)
-        return self.conn is not None and self.rx_handle is not None
-
-    def write_line(self, s):
-        if self.conn is None or self.rx_handle is None:
-            return False
+    def read(self):
+        if b"\n" not in self.buf:
+            return None
+        line, self.buf = self.buf.split(b"\n", 1)
         try:
-            self.ble.gattc_write(self.conn, self.rx_handle, (s + "\n").encode(), 1)
-            return True
+            return int(float(line.decode().strip()))
         except:
-            return False
+            return None
 
-uart = UART(2, baudrate=115200, tx=Pin(17), rx=Pin(16))
-buf = b""
+ble = BLE()
 
-cli = BleClient("car-esp32")
+in1 = Pin(25, Pin.OUT)
+in2 = Pin(26, Pin.OUT)
+ena = PWM(Pin(27))
+ena.freq(1000)
+
+in3 = Pin(32, Pin.OUT)
+in4 = Pin(33, Pin.OUT)
+enb = PWM(Pin(14))
+enb.freq(1000)
+
+irL = Pin(34, Pin.IN)
+irR = Pin(35, Pin.IN)
+
+MIN_PWM = 200
+MAX_PWM = 900
+DEFAULT_PWM = 350
+
+X_MIN = 80
+X_MAX = 250
+
+cur = DEFAULT_PWM
+target = DEFAULT_PWM
+
+ramp = 8
+dt = 0.02
+
+def clamp(v):
+    if v < 0: return 0
+    if v > 1023: return 1023
+    return v
+
+def fwd():
+    in1.value(1); in2.value(0)
+    in3.value(1); in4.value(0)
+
+def set_lr(l, r):
+    ena.duty(clamp(int(l)))
+    enb.duty(clamp(int(r)))
+
+def map_x(x):
+    if x < X_MIN: x = X_MIN
+    if x > X_MAX: x = X_MAX
+    return MIN_PWM + (x - X_MIN) * (MAX_PWM - MIN_PWM) // (X_MAX - X_MIN)
+
+fwd()
+set_lr(cur, cur)
 
 while True:
-    if cli.conn is None or cli.rx_handle is None:
-        cli.connect()
+    x = ble.read()
+    if x is not None:
+        if x < 0:
+            target = MIN_PWM
+        else:
+            target = map_x(x)
 
-    if uart.any():
-        buf += uart.read()
-        if b"\n" in buf or b"\r" in buf:
-            b = buf.replace(b"\r", b"\n")
-            parts = b.split(b"\n")
-            line = parts[0]
-            buf = b"\n".join(parts[1:])
-            try:
-                s = line.decode().strip()
-            except:
-                s = ""
-            x = first_number(s)
-            if x is not None:
-                cli.write_line(str(x))
+    if cur < target:
+        cur += ramp
+        if cur > target: cur = target
+    elif cur > target:
+        cur -= ramp
+        if cur < target: cur = target
 
-    time.sleep_ms(10)
+    l = irL.value()
+    r = irR.value()
+
+    if l == 0 and r == 0:
+        set_lr(cur, cur)
+    elif l == 0 and r == 1:
+        set_lr(cur * 0.4, cur)
+    elif l == 1 and r == 0:
+        set_lr(cur, cur * 0.4)
+    else:
+        set_lr(cur * 0.6, cur * 0.6)
+
+    time.sleep(dt)
