@@ -1,50 +1,50 @@
-from machine import Pin
+from machine import Pin, PWM
 import time
 
-ls = Pin(34, Pin.IN)
-rs = Pin(35, Pin.IN)
+in1 = Pin(25, Pin.OUT)
+in2 = Pin(26, Pin.OUT)
+ena = PWM(Pin(27))
+ena.freq(1000)
 
-l1 = Pin(25, Pin.OUT)
-l2 = Pin(26, Pin.OUT)
+in3 = Pin(32, Pin.OUT)
+in4 = Pin(33, Pin.OUT)
+enb = PWM(Pin(14))
+enb.freq(1000)
 
-r1 = Pin(27, Pin.OUT)
-r2 = Pin(14, Pin.OUT)
+irL = Pin(34, Pin.IN)
+irR = Pin(35, Pin.IN)
 
-def forward():
-    l1.on()
-    l2.off()
-    r1.on()
-    r2.off()
+base = 600
+turn = 300
 
-def left():
-    l1.off()
-    l2.on()
-    r1.on()
-    r2.off()
+def fwd():
+    in1.value(1)
+    in2.value(0)
+    in3.value(1)
+    in4.value(0)
 
-def right():
-    l1.on()
-    l2.off()
-    r1.off()
-    r2.on()
+def set_lr(l, r):
+    ena.duty(int(l))
+    enb.duty(int(r))
 
-def stop():
-    l1.off()
-    l2.off()
-    r1.off()
-    r2.off()
+fwd()
+set_lr(0, 0)
 
 while True:
-    l = ls.value()
-    r = rs.value()
+    l = irL.value()
+    r = irR.value()
 
-    if l == 1 and r == 1:
-        forward()
+    if l == 0 and r == 0:
+        set_lr(base, base)
+
     elif l == 0 and r == 1:
-        left()
-    elif l == 1 and r == 0:
-        right()
-    else:
-        stop()
+        set_lr(turn, base)
 
-    time.sleep(0.01)
+    elif l == 1 and r == 0:
+        set_lr(base, turn)
+
+    else:
+        set_lr(0, 0)
+
+    time.sleep(0.02)
+
