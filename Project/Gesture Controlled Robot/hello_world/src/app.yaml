@@ -1,0 +1,4 @@
+domain_path: F:\GSRV2\GSRXX\GSRXXX\export\GSRXXX\sw\standalone_microblaze_0
+app_src_dir: C:\Xilinx\2025.1\Vitis\data\embeddedsw\lib\sw_apps\hello_world
+template: hello_world
+lang: c
