@@ -1,0 +1,68 @@
+include "BluetoothSerial.h"
+
+BluetoothSerial SerialBT;
+
+// ===== ADD =====
+// 用来实时存 speed 的变量（一直会变）
+float speedValue = 0.0;
+
+// 接收一整行用的缓冲
+String rxLine = "";
+// ===== ADD =====
+
+void setup() {
+  Serial.begin(115200);
+  SerialBT.begin("ESP32_SPP");  // 蓝牙设备名
+  Serial.println("SPP started, pair with ESP32_SPP");
+}
+
+void loop() {
+  // 收到来自电脑（PowerShell）的数据
+  while (SerialBT.available()) {
+    char c = (char)SerialBT.read();
+    Serial.write(c);            // 原有：打印到USB串口监视器
+
+    // ===== ADD =====
+    // 忽略回车，防止 CRLF 搞事情
+    if (c == '\r') continue;
+
+    // 收到换行，说明一条数据结束
+    if (c == '\n') {
+      rxLine.trim();  // 去掉空格
+
+      // 如果这一行里有 "speed:"
+      if (rxLine.startsWith("speed:") || rxLine.startsWith("Speed:")) {
+        int colonIndex = rxLine.indexOf(':');
+        if (colonIndex >= 0) {
+          // 取冒号后面的部分
+          String valueStr = rxLine.substring(colonIndex + 1);
+          valueStr.trim();
+
+          // 转成 float，存进变量（重点）
+          speedValue = valueStr.toFloat();
+
+          // 打印出来确认（可删，但强烈建议先留着）
+          Serial.print("\n[PARSED speedValue] = ");
+          Serial.println(speedValue, 2);
+        }
+      }
+
+      // 清空缓冲，准备下一条
+      rxLine = "";
+    } else {
+      // 普通字符就累加
+      rxLine += c;
+    }
+    // ===== ADD =====
+  }
+
+  // 也可以反向：把USB串口输入转发回电脑
+  while (Serial.available()) {
+    SerialBT.write(Serial.read());
+  }
+
+  // ===== ADD =====
+  // 此时 speedValue 永远保存着“最新的一次 speed”
+  // 你后面控制电机，只用这个变量就行
+  // ===== ADD =====
+}
