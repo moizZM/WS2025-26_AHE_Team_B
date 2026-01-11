@@ -1,8 +1,46 @@
-The value of BT2 PMOD will be extracted by windows pc connected to it. The process is implemented by using powershell. The first script is used to view the values get sent by BT2.
+# BT2 PMOD Data Capture and Forwarding (Windows PowerShell)
 
+This project demonstrates how to use Windows PowerShell to:
 
+1. Read data sent from a BT2 PMOD module via Bluetooth serial port
+2. Display the incoming data in real time
+3. Forward the same data to another Bluetooth-connected device (e.g. an ESP)
+
+---
+
+## 1. System Overview
+
+### Serial Port Mapping
+
+| Port | Purpose | Description |
+|------|---------|-------------|
+| COM5 | Input   | Bluetooth serial port connected to BT2 PMOD |
+| COM6 | Output  | Bluetooth serial port connected to ESP (or other device) |
+
+### Serial Configuration
+
+- Baud rate: 9600
+- Data bits: 8
+- Parity: None
+- Stop bits: 1
+
+---
+
+## 2. Script 1 – Monitor Data from BT2 PMOD
+
+### Description
+
+This script is used to:
+- Open the Bluetooth serial port connected to the BT2 PMOD
+- Continuously read incoming serial data
+- Display the received data in the PowerShell console
+- No data forwarding is performed
+
+### PowerShell Script
+
+```powershell
 $com  = "COM5"
-$baud = 9600   # baudrate
+$baud = 9600
 
 $port = [System.IO.Ports.SerialPort]::new($com, $baud, "None", 8, "One")
 $port.ReadTimeout = 200
@@ -19,24 +57,39 @@ try {
     }
     Start-Sleep -Milliseconds 20
   }
-} finally {
+}
+finally {
   $port.Close()
 }
+```
 
+---
 
-The second script is used to show the values and at the same time transmit the data we got from BT2 to another device connected via Bluetooth.
+## 3. Script 2 – Monitor and Forward Data via Bluetooth
 
-# 电脑A：COM5 -> COM6（传出到对方COM4）COM5=bluetooth(input), COM6 is ESP need to configure in bluetooth(output)
+### Description
+
+This script:
+- Reads data from COM5 (BT2 PMOD Bluetooth input)
+- Displays the data locally in the PowerShell console
+- Forwards the data in real time to COM6
+- COM6 is connected to an ESP or another Bluetooth device
+
+### Data Flow
+
+BT2 PMOD → COM5 → Windows PC → COM6 → ESP
+
+### PowerShell Script
+
+```powershell
 $srcCom  = "COM5"
 $dstCom  = "COM6"
 $baudSrc = 9600
 $baudDst = 9600
 
-# 源端口（已有蓝牙数据流）
 $src = [System.IO.Ports.SerialPort]::new($srcCom, $baudSrc, "None", 8, "One")
 $src.ReadTimeout = 200
 
-# 目标端口（要写过去）
 $dst = [System.IO.Ports.SerialPort]::new($dstCom, $baudDst, "None", 8, "One")
 $dst.WriteTimeout = 200
 $dst.Handshake = [System.IO.Ports.Handshake]::None
@@ -46,7 +99,7 @@ $dst.RtsEnable = $true
 $src.Open()
 $dst.Open()
 
-Write-Host "Forwarding $srcCom -> $dstCom  (Ctrl+C to stop)"
+Write-Host "Forwarding $srcCom -> $dstCom (Ctrl+C to stop)"
 
 try {
   while ($true) {
@@ -54,16 +107,15 @@ try {
     if ($n -gt 0) {
       $data = $src.ReadExisting()
 
-      # 建议：去掉 \r，防止终端/下游设备异常
+      # Remove carriage return to avoid downstream parsing issues
       $data = $data -replace "`r", ""
 
-      # 本地显示（你能看到实时数据）
       Write-Host -NoNewline $data
 
-      # 转发到 COM6(ESP)
       try {
         $dst.Write($data)
-      } catch {
+      }
+      catch {
         Write-Warning "Write to $dstCom timeout, dropping data"
       }
     }
@@ -74,3 +126,15 @@ finally {
   $src.Close()
   $dst.Close()
 }
+```
+
+---
+
+## 4. Notes
+
+- Verify COM port numbers in Windows Device Manager
+- Ensure both Bluetooth links are connected before running the scripts
+- Check baud rate and line endings if data appears corrupted
+
+
+
